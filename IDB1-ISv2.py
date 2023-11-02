@@ -25,7 +25,7 @@ CERTIFICATE_REFERENCE = os.urandom(5)  # Random 5 bytes
 
 # Message Zone
 MRZ = 'P<UTOSPECIMEN<<PETER<<<<<<<<<<<<<<<<<<<<<<<<K7629352E7UTO8504279M2805203<<<<<<<<<<<<<<00'.encode('utf-8')
-#TINY_IMAGE = os.urandom(1000)  # Random 1000 bytes
+MINI_FACIAL = os.urandom(1000)  # Random 1000 bytes
 FULL_NAME = "Gísli Ragnar Axelsson".encode('utf-8')
 
 # Signature Zone
@@ -220,7 +220,7 @@ def TLV_encode_data(data_type, data_input):
     tags = {
         "SIGNATURE": b'\x7F',
         "MRZ": b'\x07',
-        "TINY_IMAGE": b'\xAB',
+        "MINI_FACIAL": b'\xAB',
         "FULL_NAME": b'\xAA',
         "MSG_ZONE": b'\x61'
     }
@@ -476,8 +476,7 @@ print("Encoded date in hex format: ", SIGNATURE_DATE.hex())
 
 #PRINT THE RAW PAYLOAD FOR CLARITY.
 print ("RAW PAYLOAD")
-#print(ISSUING_COUNTRY + SIGNATURE_ALGORITHM + CERTIFICATE_REFERENCE + SIGNATURE_DATE + MRZ + FULL_NAME + TINY_IMAGE + SIGNATURE)
-print(ISSUING_COUNTRY + SIGNATURE_ALGORITHM + CERTIFICATE_REFERENCE + SIGNATURE_DATE + MRZ + FULL_NAME + SIGNATURE)
+print(ISSUING_COUNTRY + SIGNATURE_ALGORITHM + CERTIFICATE_REFERENCE + SIGNATURE_DATE + MRZ + FULL_NAME + MINI_FACIAL + SIGNATURE)
 
 #Apply initial encodements on relevant sections of the barcode...
 print ("applying first Encodements...")
@@ -502,8 +501,7 @@ print("Hexadecimal of C40 MRZ:", hex_representation_C40)
 
 #Print out total result of initial encodements.
 print("")
-RAW_PAYLOAD = C40_ISSUING_COUNTRY + SIGNATURE_ALGORITHM + CERTIFICATE_REFERENCE + SIGNATURE_DATE + C40_MRZ + FULL_NAME + SIGNATURE
-#RAW_PAYLOAD = C40_ISSUING_COUNTRY + SIGNATURE_ALGORITHM + CERTIFICATE_REFERENCE + SIGNATURE_DATE + C40_MRZ + FULL_NAME + TINY_IMAGE + SIGNATURE
+RAW_PAYLOAD = C40_ISSUING_COUNTRY + SIGNATURE_ALGORITHM + CERTIFICATE_REFERENCE + SIGNATURE_DATE + C40_MRZ + FULL_NAME + MINI_FACIAL + SIGNATURE
 
 #CHECK TO SEE IF ALL PAYLOAD IS IN BYTES
 if isinstance(RAW_PAYLOAD, bytes):
@@ -516,14 +514,14 @@ else:
 #Apply DER-TLV on relevant data...
 data_items = {
     "MRZ": C40_MRZ,          # Use the encoded MRZ
-    #"TINY_IMAGE": TINY_IMAGE,
+    "MINI_FACIAL": MINI_FACIAL,
     "SIGNATURE": SIGNATURE,
     "FULL_NAME": FULL_NAME
 }
 
 print("Applying DER-TLV on...")
 print("MRZ:", C40_MRZ)
-#print("TINY_IMAGE:", TINY_IMAGE)
+print("MINI_FACIAL:", MINI_FACIAL)
 print("SIGNATURE:", SIGNATURE)
 print("FULL_NAME", FULL_NAME)
 
@@ -531,8 +529,8 @@ encoded_results = {key: TLV_encode_data(key, value) for key, value in data_items
 print("Encoded results of DER-TLV:")
 print("MRZ")
 print(encoded_results["MRZ"])
-#print("TINY IMAGE")
-#print(encoded_results["TINY_IMAGE"])
+print("MINI FACIAL")
+print(encoded_results["MINI_FACIAL"])
 print("SIGNATURE")
 print(encoded_results["SIGNATURE"])
 print("FULL NAME")
@@ -540,8 +538,7 @@ print(encoded_results["FULL_NAME"])
 
 #Apply DER-TLV on content of messagezone
 print("Applying DER_TLV to the contents of the message zone")
-#C40_TLV_MSGZONE = encoded_results["MRZ"] + encoded_results["TINY_IMAGE"] + encoded_results["FULL_NAME"]
-C40_TLV_MSGZONE = encoded_results["MRZ"] + encoded_results["FULL_NAME"]
+C40_TLV_MSGZONE = encoded_results["MRZ"] + encoded_results["MINI_FACIAL"] + encoded_results["FULL_NAME"]
 print("C40_TLV_MSGZONE:", C40_TLV_MSGZONE)
 
 #Apply DER-TLV on messagezone...
@@ -588,8 +585,6 @@ print(final_decodement.hex())
 
 print("todo...")
 print("Dividing up sections based on DER-TLV...")
-# Sample input
-#byte_data = b'\x07\x1d\xB5\xDB\xD2\xC1\xB8...\xAA\x16G\xC3\xADsli Ragnar Axelsson\x7F@\xA4\x9E...'
 
 # Parse the input
 print("final decodement", final_decodement)
