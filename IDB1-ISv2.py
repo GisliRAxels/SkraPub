@@ -11,6 +11,7 @@ from PIL import Image
 
 #get time now.
 SIGNATURE_DATE = datetime.now()
+
 # Constants
 
 # Identifier + flag
@@ -19,20 +20,19 @@ BARCODE_FLAG = "D"      # Just an example, replace with your value
 BARCODE_FRONT = BARCODE_IDENTIFIER + BARCODE_FLAG
 
 # Header
-ISSUING_COUNTRY = "UTO".encode('utf-8')
-SIGNATURE_ALGORITHM = bytes([0x03])
-CERTIFICATE_REFERENCE = os.urandom(5)  # Random 5 bytes
+ISSUING_COUNTRY = "ISL".encode('utf-8')
+SIGNATURE_ALGORITHM = bytes([0x03]) # 
+CERTIFICATE_REFERENCE = b'\x97\xa3\xe9\xcc\x0f' # random 5 bytes - GET cert ref here
 
 # Message Zone
 MRZ = 'P<UTOSPECIMEN<<PETER<<<<<<<<<<<<<<<<<<<<<<<<K7629352E7UTO8504279M2805203<<<<<<<<<<<<<<00'.encode('utf-8')
-MINI_FACIAL = os.urandom(1000)  # Random 1000 bytes
+MINI_FACIAL = os.urandom(1000)  # Actual Implementation depends,  get from outside.
 FULL_NAME = "Gísli Ragnar Axelsson".encode('utf-8')
 
 # Signature Zone
-SIGNATURE = os.urandom(64)  # Random 64 bytes
+#Todo,  put in actual signature.
+SIGNATURE = b'\xf9>N\xca(&\t\xbbO\xe2\xed\xe0F\xacH\xa8S\x03J\xc0\x85\xfcRyZ(ck?~\xf7\xcd\x95\x87$\n\xbe\xe9^\xc3\x9c\xc3\xe5J\x91\x9a\xf2\xbbV\t[\xb9\xca\xc9\xc0\x82`\x96\xde-\xd9JD\x8b'
 
-
-#Raw values:
 C40_CHART = {
     "Shift 1": 0,
     "Shift 2": 1,
@@ -83,7 +83,7 @@ def generate_qr_code(data, filename="IDBQRCode.png", intended_size_in_cm=2.5):
     qr = qrcode.QRCode(
         version=None,  # let the library decide the size
         error_correction=qrcode.constants.ERROR_CORRECT_M,
-        box_size=1,  # decreased box_size for a smaller image
+        box_size=2,  # decreased box_size for a smaller image
         border=4
     )
 
@@ -111,36 +111,6 @@ def generate_qr_code(data, filename="IDBQRCode.png", intended_size_in_cm=2.5):
     print(f"DPI (if printed in {intended_size_in_cm}x{intended_size_in_cm} cm): {dpi}")
     return filename
 
-def display_payload(data: bytes) -> None:
-    """Display the payload in both hex and human-readable format."""
-    
-    # Mapping of Signature Algorithm byte values to descriptions
-    SIGNATURE_ALGORITHM_MAP = {
-        0x01: "ECDSA with SHA-256 hashing algorithm",
-        0x02: "ECDSA with SHA-384 hashing algorithm",
-        0x03: "ECDSA with SHA-512 hashing algorithm"
-    }
-
-    hex_representation = data.hex()
-    ascii_representation = ""
-
-    # Try to convert each byte to its ASCII representation
-    for byte in data:
-        if 32 <= byte <= 126:  # Printable ASCII characters range
-            ascii_representation += chr(byte)
-        elif byte in SIGNATURE_ALGORITHM_MAP:
-            ascii_representation += f"[{SIGNATURE_ALGORITHM_MAP[byte]}]"
-        else:
-            ascii_representation += '.'
-
-    # Split and display side by side
-    print("Hex Representation : ASCII Representation")
-    print("------------------------------------------")
-    for i in range(0, len(hex_representation), 32):  # Splitting for easier reading
-        hex_part = hex_representation[i:i+32]
-        ascii_part = ascii_representation[int(i/2):int(i/2)+16]
-        print(f"{hex_part} : {ascii_part}")
-
 def ReplaceLessThanSymbol(data):
     if isinstance(data, str):
         return data.replace('<', ' ')
@@ -149,14 +119,7 @@ def ReplaceLessThanSymbol(data):
     else:
         raise TypeError("Input must be of type str or bytes.")
     
-def ReplaceSpaceWithLessThanSymbol(data):
-    if isinstance(data, str):
-        return data.replace(' ', '<')
-    elif isinstance(data, bytes):
-        return data.replace(b' ', b'<')
-    else:
-        raise TypeError("Input must be of type str or bytes.")
-
+#For now datamask is not included and commented out within this function.
 def encode_date(date_obj=None):
     """
     Encodes the date using the specified format.
@@ -196,8 +159,10 @@ def encode_date(date_obj=None):
     date_int = int(month_str + day_str + year_str)
     date_bytes = date_int.to_bytes(3, byteorder='big')
 
-    # Combine the mask byte and the date bytes
-    encoded_date = bytes([mask]) + date_bytes
+    #FOR NOW THIS IS COMMENTED OUT.  AND DATA MASK IS NOT INCLUDED
+    # Combine the mask byte and the date bytes  
+    #encoded_date = bytes([mask]) + date_bytes 
+    encoded_date = date_bytes
 
     return encoded_date
 
@@ -213,7 +178,6 @@ def DER_encode_length(length):
 def TLV_Encode_tagvalue(tag, value):
     """Encode the given tag and value in TLV format."""
     return tag + DER_encode_length(len(value)) + value
-
 
 def TLV_encode_data(data_type, data_input):
     """Encode data based on its type."""
@@ -312,27 +276,6 @@ def c40_encode(data):
 
     return bytes(encoded_bytes)
 
-def c40_decode(encoded_bytes):
-    decoded_string = ""
-
-    for i in range(0, len(encoded_bytes), 2):
-        I1 = encoded_bytes[i]
-        I2 = encoded_bytes[i + 1]
-
-        if I1 == 254:  # Special case for one character padding
-            decoded_string += chr(I2 - 1)
-            continue
-
-        V16 = (I1 * 256) + I2
-
-        U1 = (V16 - 1) // 1600
-        U2 = (V16 - (U1 * 1600) - 1) // 40
-        U3 = V16 - (U1 * 1600) - (U2 * 40) - 1
-
-        decoded_string += REVERSE_C40_CHART[U1] + REVERSE_C40_CHART.get(U2, "") + REVERSE_C40_CHART.get(U3, "")
-
-    return decoded_string
-
 def ascii_to_binary(input_data):
     if isinstance(input_data, str):  # If input is a string
         return ''.join(format(ord(char), '08b') for char in input_data)
@@ -348,6 +291,7 @@ def zlib_compress(data: bytes) -> bytes:
 def decompress_data(data):
     return zlib.decompress(data)
 
+#Not used but decided to include it anyway,  seems 
 def custom_base32_encode(text, output_as_bytes=False):
     # Base-32 symbol chart
     symbols = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
@@ -381,29 +325,6 @@ def custom_base32_encode(text, output_as_bytes=False):
     else:
         return encoded_str
 
-def custom_base32_decode(encoded_text):
-    # Base-32 symbol chart
-    symbols = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
-
-    # Map Base-32 characters to 5-bit binary chunks
-    binary_chunks = []
-    for char in encoded_text:
-        if char == '=':
-            break  # padding, stop decoding
-        binary_val = bin(symbols.index(char))[2:].zfill(5)
-        binary_chunks.append(binary_val)
-
-    # Convert to bytes
-    binary_data = ''.join(binary_chunks)
-
-    # Make sure the length of binary_data is a multiple of 8
-    while len(binary_data) % 8 != 0:
-        binary_data = binary_data[:-1]
-
-    decoded_bytes = bytes([int(binary_data[i:i+8], 2) for i in range(0, len(binary_data), 8)])
-
-    return decoded_bytes
-
 def base32_encode(input_bytes):
     """
     Encode the input bytes using Base32.
@@ -416,26 +337,9 @@ def base32_encode(input_bytes):
     """
     return base64.b32encode(input_bytes)
 
-def base32_decode(encoded_bytes):
-    """
-    Decode the Base32 encoded bytes.
-    
-    Args:
-    - encoded_bytes (bytes): The Base32 encoded bytes to decode.
-    
-    Returns:
-    - bytes: The decoded bytes.
-    """
-    return base64.b32decode(encoded_bytes)
-
 def remove_base32_padding(encoded_data: bytes) -> bytes:
     """Remove padding from a Base32 encoded byte sequence."""
     return encoded_data.rstrip(b'=')
-
-def add_base32_padding(encoded_data: bytes) -> bytes:
-    """Add padding to a Base32 encoded byte sequence."""
-    padding_needed = (8 - len(encoded_data) % 8) % 8
-    return encoded_data + b'=' * padding_needed
 
 def main_pipeline(input):
 
@@ -452,19 +356,6 @@ def main_pipeline(input):
     print("BASE32 encoding succesful....")
 
     return Base32EncodedPayload
-
-def main_reverse(input_string):
-
-    # Step 1: Base32 Decoding
-    decoded_base32 = base32_decode(input_string)
-    print("decoded base32")
-    print(decoded_base32)   
-
-    # Step 2: ZLIB Decompression (assuming input_string is string, convert it to bytes)
-    decompressed_data = decompress_data(decoded_base32)
-    print(f"ZLIB Decompressed: {decompressed_data.hex()}")  # print it as a hex string
-
-    return decompressed_data
 
 # Combining the values to create the RAW PAYLOAD
 
@@ -485,7 +376,7 @@ print ("applying first Encodements...")
 print("Encoding Country code", ISSUING_COUNTRY,"...")
 C40_ISSUING_COUNTRY = c40_encode(ISSUING_COUNTRY)
 print("Encoded Bytes of country code:", C40_ISSUING_COUNTRY)
-print("Encoded Country code in hex format:", C40_ISSUING_COUNTRY)
+print("Encoded Country code in hex format:", C40_ISSUING_COUNTRY.hex())
 
 #MRZ,  replace spacebar and then C40 encode.
 print("Replacing < in MRZ:", MRZ, "...")
@@ -501,7 +392,15 @@ print("Hexadecimal of C40 MRZ:", hex_representation_C40)
 
 #Print out total result of initial encodements.
 print("")
+print("certificate in bytes", CERTIFICATE_REFERENCE)
+print("CERTIFICATE REFERENCE IN HEX", CERTIFICATE_REFERENCE.hex())
+print("FULL NAME:", FULL_NAME)
+print("FULL NAME IN HEX:", FULL_NAME.hex())
+print("SIGNATURE IN HEX:", SIGNATURE.hex())
+print("ALGORITHM IN HEX:", SIGNATURE.hex())
+print("RAW PAYLOAD:")
 RAW_PAYLOAD = C40_ISSUING_COUNTRY + SIGNATURE_ALGORITHM + CERTIFICATE_REFERENCE + SIGNATURE_DATE + C40_MRZ + FULL_NAME + MINI_FACIAL + SIGNATURE
+#RAW_PAYLOAD = C40_ISSUING_COUNTRY + SIGNATURE_ALGORITHM + CERTIFICATE_REFERENCE + SIGNATURE_DATE + C40_MRZ + FULL_NAME  + SIGNATURE
 
 #CHECK TO SEE IF ALL PAYLOAD IS IN BYTES
 if isinstance(RAW_PAYLOAD, bytes):
@@ -521,24 +420,34 @@ data_items = {
 
 print("Applying DER-TLV on...")
 print("MRZ:", C40_MRZ)
+print("MRZ hex:", C40_MRZ.hex())
 print("MINI_FACIAL:", MINI_FACIAL)
 print("SIGNATURE:", SIGNATURE)
+print("SIGNATURE HEX:", SIGNATURE.hex())
 print("FULL_NAME", FULL_NAME)
+print("FULL_NAME HEX", FULL_NAME.hex())
 
 encoded_results = {key: TLV_encode_data(key, value) for key, value in data_items.items()}
 print("Encoded results of DER-TLV:")
 print("MRZ")
 print(encoded_results["MRZ"])
+print("hex")
+print(encoded_results["MRZ"].hex())
 print("MINI FACIAL")
 print(encoded_results["MINI_FACIAL"])
 print("SIGNATURE")
 print(encoded_results["SIGNATURE"])
+print("hex")
+print(encoded_results["SIGNATURE"].hex())
 print("FULL NAME")
 print(encoded_results["FULL_NAME"])
+print("hex")
+print(encoded_results["FULL_NAME"].hex())
 
 #Apply DER-TLV on content of messagezone
 print("Applying DER_TLV to the contents of the message zone")
 C40_TLV_MSGZONE = encoded_results["MRZ"] + encoded_results["MINI_FACIAL"] + encoded_results["FULL_NAME"]
+
 print("C40_TLV_MSGZONE:", C40_TLV_MSGZONE)
 
 #Apply DER-TLV on messagezone...
@@ -551,8 +460,8 @@ print("DER_TLV_ENCODED_MSGZONE in Hex:", DER_TLV_ENCODED_MSGZONE.hex())
 SIGNATURE = encoded_results["SIGNATURE"]
 print("SIGNATURE DER-TLVd: ", SIGNATURE)
 
-PAYLOAD = C40_ISSUING_COUNTRY + SIGNATURE_ALGORITHM + CERTIFICATE_REFERENCE + SIGNATURE_DATE + C40_TLV_MSGZONE + SIGNATURE
-print("PAYLOAD: ", PAYLOAD)
+PAYLOAD = C40_ISSUING_COUNTRY + SIGNATURE_ALGORITHM + CERTIFICATE_REFERENCE + SIGNATURE_DATE + DER_TLV_ENCODED_MSGZONE + SIGNATURE
+print("PAYLOAD in hex: ", PAYLOAD.hex())
 
 #Main pipeline
 print("Encoding PAYLOAD with main pipeline...")
@@ -562,6 +471,7 @@ print("representation of final payload encodement:")
 print(final_encodement)
 final_encodement_nopadding = remove_base32_padding(final_encodement)
 final_encodement_string = final_encodement_nopadding.decode('utf-8')
+print('string...')
 print(final_encodement_string)
 
 final_barcode_string = BARCODE_FRONT + final_encodement_string
@@ -569,32 +479,4 @@ print(final_barcode_string)
 print("generating QRcode...")
 generate_qr_code(final_barcode_string)
 
-
-print("")
-print("######################################### DECODE SECTION ###########################################")
-print("")
-
-print("Adding padding...")
-final_encodement_paddingadded = add_base32_padding(final_encodement_nopadding)
-
-print("Decoding Base-32 and ZLIB...")
-#DECODE
-final_decodement = main_reverse(final_encodement_paddingadded)
-print("final decodement in hex")
-print(final_decodement.hex())
-
-print("todo...")
-print("Dividing up sections based on DER-TLV...")
-
-# Parse the input
-print("final decodement", final_decodement)
-parsed_values = parse_DER_TLV(final_decodement)
-# Output the parsed values
-for tag, value in parsed_values.items():
-    print(f"{tag}: {value}")
-
-print("Removing DER-TLV from selected contents")
-
-print("Apply C40 decodement on certain contends based on their previous tag")
-
-print("Contents;")
+#Might publicize decode section and more custom functions later.
