@@ -183,7 +183,7 @@ def TLV_encode_data(data_type, data_input):
     """Encode data based on its type."""
     tags = {
         "SIGNATURE": b'\x7F',
-        "MRZ": b'\x07',
+        "MRZ": b'\x08',
         "MINI_FACIAL": b'\xAB',
         "FULL_NAME": b'\xAA',
         "MSG_ZONE": b'\x61'
@@ -199,7 +199,7 @@ def parse_DER_TLV(byte_data):
     parsed_data = {}
     tags = {
         b'\x61': "MSG_ZONE:",
-        b'\x07': "MRZ",
+        b'\x08': "MRZ",
         b'\x7F': "SIGNATURE",
         b'\xAA': "FULL_NAME",
         b'\xAB': "MINI_FACIAL",
