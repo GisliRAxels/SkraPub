@@ -50,6 +50,16 @@ C40_CHART = {
 
 REVERSE_C40_CHART = {value: key for key, value in C40_CHART.items()}
 
+
+def write_error_to_file(error_message, file_path='err.txt'):
+    """Write the provided error message to the specified file."""
+    try:
+        with open(file_path, 'w') as file:
+            file.write(error_message)
+    except Exception as e:
+        logging.error(f"Failed to write error to {file_path}: {e}")
+
+
 def setup_logging():
     log_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
 
@@ -75,6 +85,8 @@ def determine_signature_status(flag):
     elif flag in ['B', 'D']:
         IsSigned = True
     else:
+        error_message ="Invalid flag. Flag must be 'A', 'B', 'C', or 'D"
+        write_error_to_file(error_message)
         raise ValueError("Invalid flag. Flag must be 'A', 'B', 'C', or 'D'.")
     
     return IsSigned
@@ -150,12 +162,16 @@ def HeadReader(barcode_data, IsSigned):
 
     if IsSigned == False:
         if len(barcode_data) < 2:
+            error_message ="Barcode data is too short for this flag type in head"
+            write_error_to_file(error_message)
             raise ValueError("Barcode data is too short for this flag type.")
         country_identifier = barcode_data[:2]
         remaining_data = barcode_data[2:]
 
     elif IsSigned == True:
         if len(barcode_data) < 11:
+            error_message ="Barcode data is too short for this flag type in head"
+            write_error_to_file(error_message)
             raise ValueError("Barcode data is too short for this flag type.")
         country_identifier = barcode_data[:2]
         signature_algorithm = barcode_data[2:3]
@@ -164,6 +180,8 @@ def HeadReader(barcode_data, IsSigned):
         remaining_data = barcode_data[11:]
 
     else:
+        error_message ="Invalid barcode flag"
+        write_error_to_file(error_message)
         raise ValueError(f"Invalid barcode flag: {IsSigned}")
 
     header_data = {
@@ -178,11 +196,15 @@ def HeadReader(barcode_data, IsSigned):
 
 def extract_message_zone(data):
     if len(data) < 2:
+        error_message ="message zone data too short"
+        write_error_to_file(error_message)
         raise ValueError("Data is too short to contain a valid message zone.")
 
     # Check for the tag
     tag = data[0]
     if tag != 0x61:
+        error_message ="Expected messagezone tag 0x61 not found."
+        write_error_to_file(error_message)
         raise ValueError(f"Expected tag 0x61, but found {tag}.")
 
     # Extract the length
@@ -190,6 +212,8 @@ def extract_message_zone(data):
     if length_byte & 0x80:  # Long form
         num_length_bytes = length_byte & 0x7F  # Number of subsequent bytes
         if num_length_bytes == 0 or num_length_bytes > len(data) - 2:
+            error_message ="Invalid length bytes in DER-TLV encoding of messagezone"
+            write_error_to_file(error_message)
             raise ValueError("Invalid length bytes in DER-TLV encoding.")
         length = int.from_bytes(data[2:2 + num_length_bytes], 'big')
         start_index = 2 + num_length_bytes
@@ -199,6 +223,8 @@ def extract_message_zone(data):
 
     # Ensure there's enough data for the message zone
     if start_index + length > len(data):
+        error_message ="Not enough data in messagezone"
+        write_error_to_file(error_message)
         raise ValueError("Data is truncated or length is incorrect.")
 
     # Extract the message zone
@@ -297,6 +323,8 @@ def SignatureZoneCheck(data, IsSigned, logger):
     if IsSigned:
         if not data:
             logger.error("SignatureZoneCheck: No data found in the signature zone, but IsSigned is True.")
+            error_message ="no data in signature zone found but issigned is true"
+            write_error_to_file(error_message)
             raise ValueError("No data in signature zone despite IsSigned being True.")
     else:
         if data:
@@ -357,6 +385,8 @@ def SignatureReader(data, IsSigned):
         return None
 
     if len(data) < 2:
+        error_message ="Signature zone data seems to be wrong"
+        write_error_to_file(error_message)
         raise ValueError("Data is too short to contain a valid signature zone.")
 
     # Check for the tag
@@ -386,6 +416,8 @@ def SignatureReader(data, IsSigned):
     # Check for any remaining data
     remaining_data = data[start_index + length:]
     if remaining_data:
+        error_message ="Unclear data remaining after signature zone"
+        write_error_to_file(error_message)
         print("Warning: Unclear data remaining after signature zone:", remaining_data.hex())
 
     return signature_zone
@@ -400,6 +432,8 @@ def MRZSplitter(mrz_data):
     """
     #
     if len(mrz_data) != 90:
+        error_message ="The mrz data needs to be 90 characters.."
+        write_error_to_file(error_message)
         raise ValueError("MRZ data must be exactly 90 characters long.")
     
     return mrz_data[:30], mrz_data[30:60], mrz_data[60:]
@@ -439,6 +473,8 @@ def remove_prefix(barcode_string):
         raise ValueError("Barcode string is too short to extract required information.")
     
     if not barcode_string.startswith("IDB"):
+        error_message ="Prefix of barcode is wrong."
+        write_error_to_file(error_message)
         raise ValueError("Prefix of barcode is wrong")
     
     barcode_identifier = barcode_string[:4]
@@ -469,6 +505,8 @@ def main():
             BarcodeInput = parse_barcode_input(INPUT_DATA_FILE_PATH)
             logger.info("File read successfully: %s", BarcodeInput)
         except Exception as e:
+            error_message ="Error while reading or processing input file"
+            write_error_to_file(error_message)
             logger.error("Error while reading or processing the file: %s", e)
             raise  # Re-raise the exception to exit from main
 
@@ -476,7 +514,7 @@ def main():
         #BarcodeInput = 'IDB1APCOOXG4VZDDMTITAMGOASAAQOMBJC'
         #BarcodeInput = 'IDB1DPCOOXG6FHR67DSZT7SV3XVATTNMCZWLNPLWE776P4ZJ6AN36U2PCM5KIETKJOR6YYZGU74TPNC4GXOVUNDPSYYI3GB2L5OH2VDJ43GBNOKRMYDITJYO32XD7BAULVOUJ7EDAGAYDJ5LIBAQCF5LTWF4QFWJFMUSZSBKWBJAAMQZUA2K5ECOQDJGFGIZVFCUA6RYSBHWGYDEM4DSSYPAJ7HE7KPCAQZQKGIYDA5YDCUT77577D7EKACIWTMDNKAADVB6EM5SGY37UCDB4EATAGKYLBMB6H7YYAZQQOBYPR4AGJ5B7QVAZLAORXEUDLMJEGVCSDKKSYG7SANOPFPANKXNBFS22QOBTH5H4CSGPKTH6B7YEA2IB6GEYXGAOMTF657C4B3ZODO45K53GYS3STB7Z3ZSESRDOVPMMMXJJHRK3M3XHO72Q72T7KKHZ6SVKKVFX5KWB347ULFHR3V7PLJJZJF7HHOKXJMMPVPCMGW326OBA2O46HF5ORPS75Z4PUPTOMV3UEZHN5ZFYTOYTNK7BRR4AN46K5DWUO6RKHEZGJFYVDJYUZWX6XHZ7ZVBDH7TR4P5WIRVAC42ER76STYIHKFY5GRHGJSKRMPUU6TALRWHPU7G6FP7BDRDY6GNOCJ25W5ZM7TDY3WNWCL3LH6N7NS3OGYMJ433JXY2TGPS5THNNSL5464F4T3O7S33XGJP3DSJRHGLNLM2EWOHEW76Z6XXOXN6SYXJ6WZRID2PVP6NBVTVWRKC7YLZEHZ5TV2KDZ7Z6X57KP7SSP4J3DQWJZN7XXT2NLJX53HJQ4NX345U24ONOI6ISVK3IKL4LEMXVU3RSFN6B27G57X6KJH3W2YSTLZQPPIXVWXH33ZIZVGXQ232JXMGHAEI24POTYWXW33HV6HI7DHQ3WJQ3VVW5QB3TPDRG37HCYUHS64UF47JV7TX3JK7WPM7UOV46C7Z3JGF647ZXCE6WX4NLH6YEIO5V4WBGZJ7DZMNIIMS3QV5NKBV65FPNDGRDYFO7R2FZMGSFG3WNQV7TWNQKPWNRLGRFOEQ637LKS6LV5F55EH23BFBVM6IBV3MTH5V4HF26U44SY7FEHL5ZNNW5637WJY4HEZOVNLVYOWRJFWGW6IV73QKPRPB6PREWPSPKLE6LP72UJENDQ53SC2Y3JRYZPSNOJTDG6O7O7BX54YKD6LPV7EXKFZVXZRSEIZPWH2PLLE2FXHUOLF63Y4SNZJRMGHOVTKLTFVNS6PXFYYGO2T7PWVZU4GYZE52L4LZ53HH72PV6HP4SWR473D7JMHF764LY4JEY5BSURZNG77J7QOR3LSS2H2DFXSBRUK6LDTGTGS6NTFSDRF5M2NGT3X56JD64BH4CAPHKX7R3YQTW7O7W6DUL2HARYW5DOEZ3CMSI6766L7J6BP7OPUO5P6W6BETG2W7WXYLWMOQU5VWFAIZQXHXF6SEGF5D7A2T6XYKYSXOOLOK5ZQW4V5TE4WW2MH26VHO34NJGK2JG327CLPZDGOG2MLUWR3G3RPXP6IWI2HFJXRN24TY6JWW6FXM37E3GOILLZHRU643KUWH4S54FNS42XOMTMF5ERFGIZGQA73S7DWTLBK66X7NPR4OK7HC4OHS776VGUIZXNXUULMNNPP7M5SYQZNP6W6EDZPX4BF4G743VPSI6TYLRU5FY67YIJUBAQXB5HAQDCQHLPOL3AYC3WHE6DQJOEGKU57YNHTXPSSDBVZ3O75DW6H5YVXYVQEOM5R22B5KPKBSZIRTSWZ65355TKPNVLOHWXWGDWPHH6BJ27CNTH3WQ5Y4M3Z46VZEBU2CGT53UN55LS5ADABFDB5SE'
         #Error Test Data
-        #BarcodeInput = 'IDB1DPCOOXG6FHR67DSZ7TNT3PZHG2YVRMW36TMJ77U7ZWT4A337II6U32UQJCC7D5QRWNZ5ZG72BYNO5DJ2G7FTQRWMBUN76D45UN3DUXWTLLATS76IDCWYVXGHPWAYDA4DEQUUCQ4DSWVZYCWJC5ESRKBOZAVDAUQBWAMKFNBOSDHAFULBTEMSQRSA7A5RGTDAMNTWKBNIMPRE7TOOFBRQKMIEDANZTOUDROJ77674BRSNGBMLJ2AGTAACK47SGOZD4D7CEBA7CGIYDFMFQWB7A7YMQOZYHA4EIYBDH6U4YKQMRQHIL2KJUWUSTCQJCVFL4BPJHGPEC3RORLSSSRMFLH43TSSGHJTHVBT7E7YAAPEAYDGML5BHGJ666RR6G5MUR3P6WORT4DNZJQ36NSZCOINUK5XOBLQWT4VVXN7SXP4QP5J7VPCU2JWVVMSTZV7D52PCBSX3N27PRUE7EW6LXXNIEUHH4XVHTPMFIHMQ5HP7GSOWY5Z774OHKNZ7EKZ3CMTGY4O4Z5MZRVTQI46YC6DG672SCPEVDYN3FSIIRY4SO3H53Z5H324TT5ZY6HSZEC2YEO5CYT6JP4EAVG5GWITSU5FQUHSIPBQF737W2FT7BXTTR6QMODKWRG564OQX73QMO3K3BH4NX7S7GXMPBM2HOH4434NKTDZO5TKVZP6GMO26ZTX77NJ3TCWNRZE3D3E6UWNDLHD2JPXPPH37KWXJ4HVXIMYXR7GKR7SR2R2DPVJNMH52422KZFZ6747L67VC75JXSEVRYPH4W735ZJHV23OYTM36M3V2OONOJGPCPILK3N4DFOSELS2NM2C27A5PXOPZ75GTZ25KJRX4IHXWLC3L345UUUYT32NH4E7WHAQMFNLHXL4LLDN5HY7DVXTTIM3EZV52DPYO5RWR4TNZSBKK7YPMLK5PQ37Z25WVP3X6P2GK6NRJ4FWT656D43WC7JLWG5U7MBUNOC6LITMY6JYWOWUAJ55KCVVM3PNSHVBZJJ7C3NY5CUVDZCDB363KPYLOYNB3GZF7ISWC4PNTUNNPFZ6U76TDFNQ4QKRPYA2XXRU6G6TU47KO6JMHT2BVO6W6366N3YEUPLVMLJW72UBLUWS7CTPES6NQFH6XQ4X6SLCZHWF6P5U7FJEQHZ2OZYRJN5RYQNHZHHGZNTPPPXNQ36OOFJ5FH3PULVH4S2MYZKGM33D3G5VSFAL337DS7OMIJW4UEWTDWK3VVZS6XRNH3SMKD7PJXV3M42JD4OCM555FE753TX6HO4TX7ZPICPN57EXD677MFEIECO6QZKO46R7RUX3HQ6VXIFF5RR3VAY3FTGRXSZVJHGJQZZ4SOW5KTZ63C6UR76CTODAHTVL7Q74OI3OXDYPL3FZDUJMPOZTCM6BOJ4OP7NVRV7GXXWX6GWW7HPA2I3OL3334ETEHUKOQ22QEE3L72C6J6DSQQXWNZ63SFMOLPGVZEW4Y7PK4YSKLHOWF5PLTPNOKULGNYTN3PZDXMSTNDVGF2KYRTV7XLWPKLEJDSV34X5OJUOUVLPD3GPP6MLDEFV47Y2KOVX2DD6NOSAWXONLXGJGA7CISHEM7JQP5VPBRI5WV7NLRWP26HG77RWHD5NPVK3PEUYW32KFWOXH566IZML4WWHLPOD4R36GS6D76MKWZYPZUFAYO64PJ4EA2URYHQWTQQDBOCNTXZ6QGBF6DSNBUEPED5IOX5WXZTXJFBY645X76R3IDW42R4K4CTG6Q5NH6BGVIZUSIZ23K7636OZVLWCWXX2LXDB7HDR7OUNLR22T52YM42E5U7HJ42CKDB3M65ZGS7F3OADKMH5LL'
+        #BarcodeInput = 'IDB1DPCOOXG6FHR67DSZ7TNT3PZHG2YVRMW36TMJ77U7ZWT4A337II6U32UQJCC7D5QRWNZ5ZG72BYNO5DJ2G7FTQRWMBUN76D45UN3DUXWTLLATS76IDCWYVXGHPWAYDA4DEQUUCQ4DSWVZYCWJC5ESRKBOZAVDAUQBWAMKFNBOSDHAFULBTEMSQRSA7A5RGTDAMNTWKBNIMPRE7TOOFBRQKMIEDANZTOUDROJ77674BRSNGBMLJ2AGTAACK47SGOZD4D7CEBA7CGIYDFMFQWB7A7YMQOZYHA4EIYBDH6U4YKQMRQHIL2KJUWUSTCQJCVFL4BPJHGPEC3RORLSSSRMFLH43TSSGHJTHVBT7E7YAAPEAYDGML5BHGJ666RR6G5MUR3P6WORT4DNZJQ36NSZCOINUK5XOBLQWT4VVXN7SXP4QP5J7VPCU2JWVVMSTZV7D52PCBSX3N27PRUE7EW6LXXNIEUHH4XVHTPMFIHMQ5HP7GSOWY5Z774OHKNZ7EKZ3CMTGY4O4Z5MZRVTQI46YC6DG672SCPEVDYN3FSIIRY4SO3H53Z5H324TT5ZY6HSZEC2YEO5CYT6JP4EAVG5GWITSU5FQUHSIPBQF737W2FT7BXTTR6QMODKWRG564OQX73QMO3K3BH4NX7S7GXMPBM2HOH4434NKTDZO5TKVZP6GMO26ZTX77NJ3TCWNRZE3D3E6UWNDLHD2JPXPPH37KWXJ4HVXIMYXR7GKR7SR2R2DPVJNMH52422KZFZ6747L67VC75JXSEVRYPH4W735ZJHV23OYTM36M3V2OONOJGPCPILK3N4DFOSELS2NM2C27A5PXOPZ75GTZ25KJRX4IHXWLC3L345UUUYT32NH4E7WHAQMFNLHXL4LLDN5HY7DVXTTIM3EZV52DPYO5RWR4TNZSBKK7YPMLK5PQ37Z25WVP3X6P2GK6NRJ4FWT656D43WC7JLWG5U7MBUNOC6LITMY6JYWOWUAJ55KCVVM3PNSHVBZJJ7C3NY5CUVDZCDB363KPYLOYNB3GZF7ISWC4PNTUNNPFZ6U76TDFNQ4QKRPYA2XXRU6G6TU47KO6JMHT2BVO6W6366N3YEUPLVMLJW72UBLUWS7CTPES6NQFH6XQ4X6SLCZHWF6P5U7FJEQHZ2OZYRJN5RYQNHZHHGZNTPPPXNQ36OOFJ5FH3PULVH4S2MYZKGM33D3G5VSFAL337DS7OMIJW4UEWTDWK3VVZS6XRNH3SMKD7PJXV3M42JD4OCM555FE753TX6HO4TX7ZPICPN57EXD677MFEIECO6QZKO46R7RUX3HQ6VXIFF5RR3VAY3FTGRXSZVJHGJQZZ4SOW5KTZ63C6UR76CTODAHTVL7Q74OI3OXDYPL3FZDUJMPOZTCM6BOJ4OP7NVRV7GXXWX6GWW7HPA2I3OL3334ETEHUKOQ22QEE3L72C6J6DSQQXWNZ63SFMOLPGVZEW4Y7PK4YSKLHOWF5PLTPNOKULGNYTN3PZDXMSTNDVGF2KYRTV7XLWPKLEJDSV34X5OJUOUVLPD3GPP6MLDEFV47Y2KOVX2DD6NOSAWXONLXGJGA7CISHEM7JQP5VPBRI5WV7NLRWP26HG77RWHD5NPVK3PEUYW32KFWOXH566IZML4WWHLPOD4R36GS6D76MKWZYPZUFAYO64PJ4EA2URYHQWTQQDBOCNTXZ6QGBF6DSNBUEPED5IOX5WXZTXJFBY645X76R3IDW42R4K4CTG6Q5NH6BGVIZUSIZ23K7636OZVLWCWXX2LXDB7HDR7OUNLR22T52YM42E5U7HJ42CKDB3M65ZGS7F3OADKMH5LL======='
 
         identifier, flag, data = remove_prefix(BarcodeInput)
 
@@ -569,12 +607,6 @@ def main():
     except Exception as e:
         error_message = f"An error occurred: {e}\n traceback: {traceback.format_exc()}"
         logger.error(error_message)
-
-        # Write the error details to err.txt in the user's home directory
-        home_dir = os.path.expanduser('~')
-        err_file_path = os.path.join(home_dir, 'err.txt')
-        with open(err_file_path, 'w') as err_file:
-            err_file.write(error_message)
 
 if __name__ == "__main__":
     main()
