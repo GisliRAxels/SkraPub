@@ -16,8 +16,8 @@ import traceback
 import sys
 
 # Constants
-MF_IMAGE_PATH = 'C:\\PY\\BarcodeInput\\MicroFace.jp2' #Replace path to actual facial image
-INPUT_DATA_FILE_PATH = r'C:\PY\BarcodeInput\barcode_input_data.txt' #Replace path to actual data file
+MF_IMAGE_PATH = 'C:\\PY\\BarcodeInput\\MicroFace.jp2'
+INPUT_DATA_FILE_PATH = r'C:\PY\BarcodeInput\barcode_input_data.txt'
 BARCODE_IDENTIFIER = "IDB1"
 BARCODE_FLAG = "D"
 FRONT_BARCODE_FLAG = "A"
@@ -25,29 +25,43 @@ BIG_BARCODE_PREFIX = BARCODE_IDENTIFIER + BARCODE_FLAG
 FRONT_BARCODE_PREFIX = BARCODE_IDENTIFIER + FRONT_BARCODE_FLAG
 ISSUING_COUNTRY = "ISL".encode('utf-8')
 SIGNATURE_ALGORITHM = bytes([0x03])
+soosy = os.environ.get("sossy")
 
-# Global variables,  for demonstration in this implementation.
-CERTIFICATE_REFERENCE = b'\x97\xa3\xe9\xcc\x0f' # Replace with actual certificate method.
-# Replace with actual signature,  The actual implementation should be done lower in the main function.  This is for demonstration
+# Global variables
+CERTIFICATE_REFERENCE = b'\x97\xa3\xe9\xcc\x0f' # random 5 bytes
 SIGNATURE = b'\xf9>N\xca(&\t\xbbO\xe2\xed\xe0F\xacH\xa8S\x03J\xc0\x85\xfcRyZ(ck?~\xf7\xcd\x95\x87$\n\xbe\xe9^\xc3\x9c\xc3\xe5J\x91\x9a\xf2\xbbV\t[\xb9\xca\xc9\xc0\x82`\x96\xde-\xd9JD\x8b'
+
+
+def write_error_to_file(error_message, file_path='err.txt'):
+    """Write the provided error message to the specified file."""
+    try:
+        with open(file_path, 'w') as file:
+            file.write(error_message)
+    except Exception as e:
+        logging.error(f"Failed to write error to {file_path}: {e}")
+
 
 def parse_text_file(file_path):
     try:
         with open(file_path, 'r', encoding='utf-8') as file:
             lines = file.readlines()
 
-        if len(lines) < 6:
+        if len(lines) < 4:
             raise ValueError("File format is incorrect or missing data.")
 
         # Extracting data
-        InternalRequestNumber = lines[0].strip()
-        MRZ = ''.join(line.strip() for line in lines[1:4])
-        CAN = lines[4].strip()
-        FULL_NAME = lines[5].strip()
+        MRZ = ''.join(line.strip() for line in lines[0:3])  # MRZ lines are now 0, 1, 2
+        CAN = lines[3].strip()  # CAN is now line 3
+        FULL_NAME = lines[4].strip()  # FULL_NAME is now line 4
 
-        return InternalRequestNumber, MRZ, CAN, FULL_NAME
+        return MRZ, CAN, FULL_NAME
     except Exception as e:
-        logging.error("Error processing file %s: %s\n%s", file_path, e, traceback.format_exc())
+        #logging.error("Error processing file %s: %s\n%s", file_path, e, traceback.format_exc())
+        #raise
+
+        error_message = f"Error processing file {file_path}: {e}\n{traceback.format_exc()}"
+        logging.error(error_message)
+        write_error_to_file(error_message)  # Write the specific error to err.txt
         raise
 
 C40_CHART = {
@@ -95,47 +109,44 @@ C40_CHART = {
 
 REVERSE_C40_CHART = {value: key for key, value in C40_CHART.items()}
 
-def get_certificate_reference(certificate_bytes):
-    """
-    Derive the Certificate Reference from the given certificate bytes.
-    
-    Args:
-    - certificate_bytes (bytes): The DER-encoded certificate in bytes.
-    
-    Returns:
-    - str: The Certificate Reference.
-    """
-    sha1_hash = hashlib.sha1(certificate_bytes).digest()
-    # Get the last 5 bytes
-    certificate_reference = sha1_hash[-5:]
-    return certificate_reference.hex()  # Return as a hex string
+def create_barcode_raw_file(content, directory=r"C:\PY\BarcodeOutput"):
+    try: 
+        # Ensure the directory exists
+        if not os.path.exists(directory):
+            os.makedirs(directory)
 
-def create_barcode_raw_file(internal_request_number, content, directory=r"C:\PY\BarcodeOutput"):
-    # Ensure the directory exists
-    if not os.path.exists(directory):
-        os.makedirs(directory)
+        # Constructing the filename
+        filename = f"Barcode_raw.txt"
+        file_path = os.path.join(directory, filename)
 
-    # Constructing the filename
-    filename = f"Barcode_raw_{internal_request_number}.txt"
-    file_path = os.path.join(directory, filename)
+        # Writing content to the file
+        with open(file_path, 'w', encoding='utf-8') as file:
+            file.write(content)
+        logging.info("Back Barcode raw file created %s", file_path)
 
-    # Writing content to the file
-    with open(file_path, 'w', encoding='utf-8') as file:
-        file.write(content)
-    logging.info("Back Barcode raw file created %s", file_path)
+    except Exception as e:
+        error_message = f"Error creating barcode raw file: {e}\n{traceback.format_exc()}"
+        logging.error(error_message)
+        write_error_to_file(error_message)  # Optionally write to err.txt
+        raise
 
-def create_front_barcode_raw_file(internal_request_number, content, directory=r"C:\PY\BarcodeOutput"):
-    # Ensure the directory exists
-    if not os.path.exists(directory):
-        os.makedirs(directory)
+def create_front_barcode_raw_file(content, directory=r"C:\PY\BarcodeOutput"):
+    try:
+        # Ensure the directory exists
+        if not os.path.exists(directory):
+            os.makedirs(directory)
 
-    # Constructing the filename
-    filename = f"Front_Barcode_raw_{internal_request_number}.txt"
-    file_path = os.path.join(directory, filename)
+        # Constructing the filename
+        filename = f"Front_Barcode_raw.txt"
+        file_path = os.path.join(directory, filename)
 
-    # Writing content to the file
-    with open(file_path, 'w', encoding='utf-8') as file:
-        file.write(content)
+        # Writing content to the file
+        with open(file_path, 'w', encoding='utf-8') as file:
+            file.write(content)
+    except Exception as e:
+         error_message = f"Error creating front barcode raw file: {e}\n{traceback.format_exc()}"
+         logging.error(error_message)
+         write_error_to_file(error_message)
 
     logging.info("Front Barcode file created %s", file_path)
 
@@ -147,12 +158,16 @@ def read_image_to_bytes(image_path):
             return data
 
     except FileNotFoundError:
+        error_message = "Micro Image not found!!"
         print("### IMAGE NOT FOUND!!! ###")
         logging.error("FATAL ERROR!  Image not found %s", image_path)
+        write_error_to_file(error_message)
         #return b'\x99' * 30  # Return 10 bytes of 0x99
     except Exception as e:
+        error_message = "Error occured while opening the input image"
         print(f"### AN ERROR OCCURED WHILE OPENING INPUT IMAGE!!!: ### {e}")
         logging.error("FATAL ERROR! Error occured while opening input image: %s", image_path)
+        write_error_to_file(error_message)
         #return b'\x99' * 30  # Return 10 bytes of 0x99
     
 def get_certificate_reference(certificate_bytes):
@@ -170,33 +185,48 @@ def get_certificate_reference(certificate_bytes):
     certificate_reference = sha1_hash[-5:]
     return certificate_reference.hex()  # Return as a hex string
 
-def generate_qr_code(data, InternalRequestNumber, intended_size_in_cm=2.5, output_directory=r"C:\PY\BarcodeOutput"):
-    
+def generate_qr_code(data, intended_size_in_cm=2.5, output_directory=r"C:\PY\BarcodeOutput"):
+
+    #The QR code standard is trademarked by Denso Wave, Inc.  
+    #Referred document includes information on barcode sizes.
+    #https://www.qrcode.com/en/about/version.html
+
     qr = qrcode.QRCode(
-        version=None,  # let the library decide the size
+        version=31,  #
         error_correction=qrcode.constants.ERROR_CORRECT_M,
-        box_size=2,  # decreased box_size for a smaller image
-        border=4
+        box_size=1,  # decreased box_size for a smaller image
+        border=2
     )
 
     # Add data
     qr.add_data(data)
     qr.make(fit=True)
 
-    # Construct filename using request_number
-    filename = f"Barcode_img_{InternalRequestNumber}.png"
+    # Construct filename
+    filename = f"Barcode_img.png"
     logging.info("Back Barcode Image Created %s", filename)
 
-    # Ensure the output directory exists
-    if not os.path.exists(output_directory):
-        os.makedirs(output_directory)
-
+    try:
+        # Ensure the output directory exists
+        if not os.path.exists(output_directory):
+            os.makedirs(output_directory)
+    except Exception as e:
+        error_message = "Error creating output directory for Barcode, Please make it yourself if error persists; C:\PY\BarcodeOutput "
+        logging.error(f"Error creating directory {output_directory}: {e}")
+        write_error_to_file(error_message)
+    
     # Full path for saving the file
     full_path = os.path.join(output_directory, filename)
 
     # Create the QR code image
     img = qr.make_image(fill='black', back_color='white')
-    img.save(full_path)
+
+    try:
+        img.save(full_path)
+    except Exception as e:
+        error_message ="Error saving QR Image in output path"
+        logging.error(f"Error saving QR code image to {full_path}: {e}")
+        write_error_to_file(error_message)
 
     # Calculate QR code dimensions for reference
     qr_version = qr.version
@@ -215,7 +245,7 @@ def generate_qr_code(data, InternalRequestNumber, intended_size_in_cm=2.5, outpu
 
     return filename
 
-def generate_front_qr_code(data, InternalRequestNumber, intended_size_in_cm=0.7, output_directory=r"C:\PY\BarcodeOutput"):
+def generate_front_qr_code(data, intended_size_in_cm=0.7, output_directory=r"C:\PY\BarcodeOutput"):
     qr = qrcode.QRCode(
         version=None,  # let the library decide the size
         error_correction=qrcode.constants.ERROR_CORRECT_M,
@@ -228,7 +258,7 @@ def generate_front_qr_code(data, InternalRequestNumber, intended_size_in_cm=0.7,
     qr.make(fit=True)
 
     # Construct filename using request_number
-    filename = f"Front_Barcode_img_{InternalRequestNumber}.png"
+    filename = f"Front_Barcode_img.png"
 
     # Ensure the output directory exists
     if not os.path.exists(output_directory):
@@ -239,22 +269,28 @@ def generate_front_qr_code(data, InternalRequestNumber, intended_size_in_cm=0.7,
 
     # Create the QR code image
     img = qr.make_image(fill='black', back_color='white')
-    img.save(full_path)
+
+    try:
+        img.save(full_path)
+    except Exception as e:
+        error_message = "Error saving front qr image"
+        logging.error(f"Error saving QR code image to {full_path}: {e}")
+        write_error_to_file(error_message)
 
     # Calculate QR code dimensions for reference
     qr_version = qr.version
     modules_on_side = 4 * qr_version + 17
-    logging.info("Squared Dimensions: %s", modules_on_side)
+    logging.info("front qr Squared Dimensions: %s", modules_on_side)
 
     # Calculate total number of dots/modules in the QR code
     total_dots = modules_on_side ** 2
-    logging.info("Total Dots/Modules in QR Code %s", total_dots)
+    logging.info("Total Dots/Modules in front QR Code %s", total_dots)
 
     # DPI Calculation based on intended print size in centimeters
     intended_size_in_inches = intended_size_in_cm / 2.54  # Convert cm to inches
     dpi = (modules_on_side * qr.box_size) / intended_size_in_inches
     #print(f"DPI (if printed in {intended_size_in_cm}x{intended_size_in_cm} cm): {dpi}")
-    logging.info("Calculated DPI: %s", dpi)
+    logging.info("Calculated DPI for front: %s", dpi)
     return filename
 
 def ReplaceLessThanSymbol(data):
@@ -432,7 +468,7 @@ def ascii_to_binary(input_data):
 def zlib_compress(data: bytes) -> bytes:
     """Compress Bytes using ZLIB."""
     return zlib.compress(data)
-#Dont actually use this function,  it's for testing with custom base32 encoding.
+
 def custom_base32_encode(text, output_as_bytes=False):
     # Base-32 symbol chart
     symbols = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
@@ -500,11 +536,13 @@ def main():
         SIGNATURE_DATE = datetime.now()
         logging.info("Attempting to read input file: %s", INPUT_DATA_FILE_PATH)
         try:
-            InternalRequestNumber, MRZ, CAN, FULL_NAME = parse_text_file(INPUT_DATA_FILE_PATH)
-            logging.info("File read successfully. Data extracted: Internal Request Number: %s, MRZ: %s, CAN: %s, Full Name: %s", 
-                        InternalRequestNumber, MRZ, CAN, FULL_NAME)
+            MRZ, CAN, FULL_NAME = parse_text_file(INPUT_DATA_FILE_PATH)
+            logging.info("File read successfully. Data extracted: MRZ: %s, CAN: %s, Full Name: %s", 
+                        MRZ, CAN, FULL_NAME)
         except Exception as e:
+            error_message = "Error while reading or processing text file"
             logging.error("Error while reading or processing the file: %s", e)
+            write_error_to_file(error_message)
         
         MICRO_FACE = read_image_to_bytes(MF_IMAGE_PATH)
         
@@ -547,7 +585,10 @@ def main():
             hex_representation = ''.join([f'{byte:02x}' for byte in HeaderAndMsg])
             logging.info("Payload passed Byte check,  Header and Messagezone in Hex, before DER-TLV %s", HeaderAndMsg.hex())
         else:
+            error_message ="Payload data did NOT pass byte check."
             logging.error(" ERROR! Payload data did NOT pass Byte check!")
+            write_error_to_file(error_message)
+            
 
         #Apply DER-TLV on relevant data...
         data_items = {
@@ -604,14 +645,14 @@ def main():
         final_barcode_string = BIG_BARCODE_PREFIX + final_encodement_string
         logging.info("Generating Big QRCode...")
         try:
-            generate_qr_code(final_barcode_string, InternalRequestNumber)
+            generate_qr_code(final_barcode_string)
             logging.info("Generated Big Barcode: %s", final_barcode_string)
         except ValueError as e:
             logging.error(e)
 
         logging.info("Generating Back Barcode raw txt file...")
         try:
-            create_barcode_raw_file(InternalRequestNumber,final_barcode_string)
+            create_barcode_raw_file(final_barcode_string)
             logging.info("Success generating raw file")
         except ValueError as e:
             logging.error(e)
@@ -625,7 +666,7 @@ def main():
         C40_TLV_FRONT_MSGZONE = encoded_results["CAN"]
 
         #DERTLV on the messagezone.
-        DER_TLV_ENCODED_FRONT_MSGZONE = TLV_encode_data("MSG_ZONE", C40_TLV_FRONT_MSGZONE) #(Er þetta málið?)
+        DER_TLV_ENCODED_FRONT_MSGZONE = TLV_encode_data("MSG_ZONE", C40_TLV_FRONT_MSGZONE) #????????? er þetta málið
         logging.info("DER TLV ENCODED Front Messagezone in Hex: %s", DER_TLV_ENCODED_FRONT_MSGZONE.hex())
 
         #print out and define the payload of front barcode.
@@ -642,7 +683,7 @@ def main():
         logging.info(front_final_barcode_string)
 
         try:
-            generate_front_qr_code(front_final_barcode_string, InternalRequestNumber)
+            generate_front_qr_code(front_final_barcode_string)
             logging.info("Success generating barcode picture")
         except ValueError as e:
             print("Error:", e)
@@ -651,7 +692,7 @@ def main():
         logging.info("Generating front small barcode raw txt file...")
         try:
 
-            create_front_barcode_raw_file(InternalRequestNumber,front_final_barcode_string)
+            create_front_barcode_raw_file(front_final_barcode_string)
             print("Success generating raw txt file")
             logging.info("raw txt for small front barcode generated")
         except ValueError as e:
@@ -663,13 +704,7 @@ def main():
     except Exception as e:
         error_message = f"An unexpected error occurred: {e}\n{traceback.format_exc()}"
         logging.error(error_message)
-        print("An error occurred. Please check the log file and err.txt for details.")
-
-        # Write the error message to err.txt
-        with open("err.txt", "w") as err_file:
-            err_file.write(error_message)
-
-        return 1  # Non-zero return code indicates an error
+        print("An error occurred. Please check the log file for details.")
     
     finally:
         print("Script finished. Exiting...")
@@ -677,7 +712,7 @@ def main():
 if __name__ == "__main__":
     # Configure logging with rotating file handler
     handlers = [
-        RotatingFileHandler("Barcode_logv3.log", maxBytes=10*1024*1024, backupCount=5),
+        RotatingFileHandler("Barcode_log.log", maxBytes=10*1024*1024, backupCount=5),
         logging.StreamHandler()
     ]
 
