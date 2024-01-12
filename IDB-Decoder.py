@@ -35,15 +35,11 @@ ISSUING_COUNTRY = "ISL".encode('utf-8')
 SIGNATURE_ALGORITHM = bytes([0x03])
 BIG_BARCODE_PREFIX = BARCODE_IDENTIFIER + BARCODE_FLAG
 FRONT_BARCODE_PREFIX = BARCODE_IDENTIFIER + FRONT_BARCODE_FLAG
+#When certificate file is unreachable in environment;
+#CERTIFICATE_REFERENCE = b'\x97\xa3\xe9\xcc\x0f' 
 
 #variable used for signing. specific to environment.
 lpw = os.environ.get("YourVariable")
-
-#Values used for testing
-#When certificate file is unreachable in environment;
-#CERTIFICATE_REFERENCE = b'\x97\xa3\xe9\xcc\x0f' 
-#When HSM is unreachable in environment
-#SIGNATURE = b'\xf9>N\xca(&\t\xbbO\xe2\xed\xe0F\xacH\xa8S\x03J\xc0\x85\xfcRyZ(ck?~\xf7\xcd\x95\x87$\n\xbe\xe9^\xc3\x9c\xc3\xe5J\x91\x9a\xf2\xbbV\t[\xb9\xca\xc9\xc0\x82`\x96\xde-\xd9JD\x8b'
 
 def write_error_to_file(error_message, file_path='err.txt'):
     """
