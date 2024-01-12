@@ -1,47 +1,62 @@
+from datetime import datetime
+from logging.handlers import RotatingFileHandler
+from PIL import Image
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives import serialization
+
 import os
 import zlib
 import base64
-from datetime import datetime
 import hashlib
-import subprocess
-import time
-import random
 import logging
-from logging.handlers import RotatingFileHandler
 import qrcode
-import string
-from PIL import Image
-import io
 import traceback
 import sys
+import time
+import PyKCS11
 
-# Constants
-MF_IMAGE_PATH = 'C:\\PY\\BarcodeInput\\MicroFace.jp2'
-INPUT_DATA_FILE_PATH = r'C:\PY\BarcodeInput\barcode_input_data.txt'
+"""
+constants specific to the Icelandic Production of barcodes.
+
+please note that changing some of these will not produce any meaningful effects
+on the methods used on the barcode generation and would need to be further implemented.
+"""
+#Paths
+MF_IMAGE_PATH = 'C:\\PY\\BarcodeInput\\MicroFace.jp2' #MicroFace image.
+INPUT_DATA_FILE_PATH = r'C:\PY\BarcodeInput\barcode_input_data.txt' #Data file for production
+der_file_path = 'Path:\To\Your\derfile.der' #Certificate File
+
+#Constants needed for the barcode data.
 BARCODE_IDENTIFIER = "IDB1"
 BARCODE_FLAG = "D"
 FRONT_BARCODE_FLAG = "A"
-BIG_BARCODE_PREFIX = BARCODE_IDENTIFIER + BARCODE_FLAG
-FRONT_BARCODE_PREFIX = BARCODE_IDENTIFIER + FRONT_BARCODE_FLAG
 ISSUING_COUNTRY = "ISL".encode('utf-8')
 SIGNATURE_ALGORITHM = bytes([0x03])
-soosy = os.environ.get("sossy")
+BIG_BARCODE_PREFIX = BARCODE_IDENTIFIER + BARCODE_FLAG
+FRONT_BARCODE_PREFIX = BARCODE_IDENTIFIER + FRONT_BARCODE_FLAG
+#When certificate file is unreachable in environment;
+#CERTIFICATE_REFERENCE = b'\x97\xa3\xe9\xcc\x0f' 
 
-# Global variables
-CERTIFICATE_REFERENCE = b'\x97\xa3\xe9\xcc\x0f' # random 5 bytes
-SIGNATURE = b'\xf9>N\xca(&\t\xbbO\xe2\xed\xe0F\xacH\xa8S\x03J\xc0\x85\xfcRyZ(ck?~\xf7\xcd\x95\x87$\n\xbe\xe9^\xc3\x9c\xc3\xe5J\x91\x9a\xf2\xbbV\t[\xb9\xca\xc9\xc0\x82`\x96\xde-\xd9JD\x8b'
-
+#variable used for signing. specific to environment.
+lpw = os.environ.get("YourVariable")
 
 def write_error_to_file(error_message, file_path='err.txt'):
-    """Write the provided error message to the specified file."""
+    """
+    For logging errors.
+    Writes the provided error message to the specified file.
+    """
     try:
         with open(file_path, 'w') as file:
             file.write(error_message)
     except Exception as e:
         logging.error(f"Failed to write error to {file_path}: {e}")
 
-
 def parse_text_file(file_path):
+    """
+    Parsing in text file which incude personalization information for the barcode generation, 
+    This is specific to the production system
+    """
     try:
         with open(file_path, 'r', encoding='utf-8') as file:
             lines = file.readlines()
@@ -56,14 +71,15 @@ def parse_text_file(file_path):
 
         return MRZ, CAN, FULL_NAME
     except Exception as e:
-        #logging.error("Error processing file %s: %s\n%s", file_path, e, traceback.format_exc())
-        #raise
-
         error_message = f"Error processing file {file_path}: {e}\n{traceback.format_exc()}"
         logging.error(error_message)
         write_error_to_file(error_message)  # Write the specific error to err.txt
         raise
 
+"""
+Values defined for the C40 encoding., based on the description of the
+ICAO standardized document 9303 Part 13,  chapter 2.6
+"""
 C40_CHART = {
     "Shift 1": 0,
     "Shift 2": 1,
@@ -106,10 +122,27 @@ C40_CHART = {
     "Y": 38,
     "Z": 39,
 }
-
+#Obsolete as of now,  useful for decoding C40
 REVERSE_C40_CHART = {value: key for key, value in C40_CHART.items()}
 
+def ensure_all_bytes(*args):
+    """
+    Verifying data as bytes.  A.K.A byte-check.
+    """
+    for i, item in enumerate(args, start=1):
+        if not isinstance(item, bytes):
+            error_message = f"Item {i} is not bytes. It's of type {type(item)}."
+            logging.error(error_message)
+            write_error_to_file(error_message)  #write to err.txt if byte check fails.
+            raise TypeError(error_message)  
+        else:
+            good_message = f"Item {i} passes byte check before signing."
+            logging.info(good_message)
+
 def create_barcode_raw_file(content, directory=r"C:\PY\BarcodeOutput"):
+    """
+    Creation of txt file that includes the pure barcode output for further processing, specific to the production environment.
+    """
     try: 
         # Ensure the directory exists
         if not os.path.exists(directory):
@@ -131,6 +164,9 @@ def create_barcode_raw_file(content, directory=r"C:\PY\BarcodeOutput"):
         raise
 
 def create_front_barcode_raw_file(content, directory=r"C:\PY\BarcodeOutput"):
+    """
+    This function creates the front barcode (CAN) raw data in txt.
+    """
     try:
         # Ensure the directory exists
         if not os.path.exists(directory):
@@ -151,6 +187,10 @@ def create_front_barcode_raw_file(content, directory=r"C:\PY\BarcodeOutput"):
     logging.info("Front Barcode file created %s", file_path)
 
 def read_image_to_bytes(image_path):
+    """
+    Reading in the image data for barcode.
+    Note: the image specified for this code is at or under 1kb.
+    """
     try:
         # Open the file in binary mode and read its contents
         with open(image_path, 'rb') as file:
@@ -162,40 +202,36 @@ def read_image_to_bytes(image_path):
         print("### IMAGE NOT FOUND!!! ###")
         logging.error("FATAL ERROR!  Image not found %s", image_path)
         write_error_to_file(error_message)
-        #return b'\x99' * 30  # Return 10 bytes of 0x99
+        #return b'\x99' * 30  # Return 10 bytes of 0x99 (For testing without image.)
     except Exception as e:
         error_message = "Error occured while opening the input image"
         print(f"### AN ERROR OCCURED WHILE OPENING INPUT IMAGE!!!: ### {e}")
         logging.error("FATAL ERROR! Error occured while opening input image: %s", image_path)
         write_error_to_file(error_message)
-        #return b'\x99' * 30  # Return 10 bytes of 0x99
-    
-def get_certificate_reference(certificate_bytes):
-    """
-    Derive the Certificate Reference from the given certificate bytes.
-    
-    Args:
-    - certificate_bytes (bytes): The DER-encoded certificate in bytes.
-    
-    Returns:
-    - str: The Certificate Reference.
-    """
-    sha1_hash = hashlib.sha1(certificate_bytes).digest()
-    # Get the last 5 bytes
-    certificate_reference = sha1_hash[-5:]
-    return certificate_reference.hex()  # Return as a hex string
+        #return b'\x99' * 30  # Return 10 bytes of 0x99 (For testing without image.)
+
 
 def generate_qr_code(data, intended_size_in_cm=2.5, output_directory=r"C:\PY\BarcodeOutput"):
 
-    #The QR code standard is trademarked by Denso Wave, Inc.  
-    #Referred document includes information on barcode sizes.
-    #https://www.qrcode.com/en/about/version.html
+    '''
+    #The actual specifications and the generations of the barcode.  
+    
+    Before changing the config specification settings for the barcode please look into the QR standard
+
+    The QR code standard is specified by Denso Wave, Inc.  
+    Referred document includes information on barcode data capacity.
+    https://www.qrcode.com/en/about/version.html
+
+    Please note that the intended_size_in_cm is for the calculation of the DPI only,
+    the actual printing itself should be determined by layout and printing settings after
+    running this script.
+    '''
 
     qr = qrcode.QRCode(
-        version=31,  #
-        error_correction=qrcode.constants.ERROR_CORRECT_M,
-        box_size=1,  # decreased box_size for a smaller image
-        border=2
+        version=33,  #This determines the detail level of the barcode. Choose in accordance with data size of the barcode.
+        error_correction=qrcode.constants.ERROR_CORRECT_M, #Increases Scannability, Durability and Data size. L = 7%, M = 15%, Q = 25%, H = 30%
+        box_size=1,  # How many pixels each "box" of the QR code is.
+        border=2 #How many boxes the thickness of the border of the QRcode Image is.
     )
 
     # Add data
@@ -237,20 +273,32 @@ def generate_qr_code(data, intended_size_in_cm=2.5, output_directory=r"C:\PY\Bar
     total_dots = modules_on_side ** 2
     logging.info("Total Dots/Modules in QR Code %s", total_dots)
 
-    # DPI Calculation based on intended print size in centimeters
+    # DPI Calculation based on intended print size in centimeters,  This might be wrong.
     intended_size_in_inches = intended_size_in_cm / 2.54  # Convert cm to inches
     dpi = (modules_on_side * qr.box_size) / intended_size_in_inches
-    #print(f"DPI (if printed in {intended_size_in_cm}x{intended_size_in_cm} cm): {dpi}")
     logging.info("Calculated DPI: %s", dpi)
 
     return filename
 
 def generate_front_qr_code(data, intended_size_in_cm=0.7, output_directory=r"C:\PY\BarcodeOutput"):
+    """
+    #The actual specifications and the generations of the FRONT(small) barcode.  
+    
+    Before changing the config specification settings for the barcode please look into the QR standard
+
+    The QR code standard is specified by Denso Wave, Inc.  
+    Referred document includes information on barcode data capacity.
+    https://www.qrcode.com/en/about/version.html
+
+    Please note that the intended_size_in_cm is for the calculation of the DPI only,
+    the actual printing itself should be determined by layout and printing settings after
+    running this script.
+    """
     qr = qrcode.QRCode(
-        version=None,  # let the library decide the size
-        error_correction=qrcode.constants.ERROR_CORRECT_M,
-        box_size=2,  # decreased box_size for a smaller image
-        border=4
+        version=None,  # let the library decide the size, This determines the detail level of the barcode. Choose in accordance with data size of the barcode.
+        error_correction=qrcode.constants.ERROR_CORRECT_M, #Increases Scannability, Durability and Data size. L = 7%, M = 15%, Q = 25%, H = 30%
+        box_size=1,  # How many pixels each "box" of the QR code is.
+        border=2 #How many boxes the thickness of the border of the QRcode Image is.
     )
 
     # Add data
@@ -289,11 +337,13 @@ def generate_front_qr_code(data, intended_size_in_cm=0.7, output_directory=r"C:\
     # DPI Calculation based on intended print size in centimeters
     intended_size_in_inches = intended_size_in_cm / 2.54  # Convert cm to inches
     dpi = (modules_on_side * qr.box_size) / intended_size_in_inches
-    #print(f"DPI (if printed in {intended_size_in_cm}x{intended_size_in_cm} cm): {dpi}")
     logging.info("Calculated DPI for front: %s", dpi)
     return filename
 
 def ReplaceLessThanSymbol(data):
+    """
+    Function is used for the MRZ data.  as per IDB the '<' symbol is replaced with a spacebar
+    """
     if isinstance(data, str):
         return data.replace('<', ' ')
     elif isinstance(data, bytes):
@@ -311,7 +361,7 @@ def encode_date(date_obj=None):
     Returns:
     - bytes: Encoded date as per the given specification.
     """
-    
+
     # If no date_obj is provided, use the current date
     if date_obj is None:
         date_obj = datetime.now()
@@ -341,8 +391,7 @@ def encode_date(date_obj=None):
     date_bytes = date_int.to_bytes(3, byteorder='big')
 
     # Combine the mask byte and the date bytes
-    #encoded_date = bytes([mask]) + date_bytes
-    encoded_date = date_bytes
+    encoded_date = bytes([mask]) + date_bytes
 
     return encoded_date
 
@@ -397,7 +446,6 @@ def parse_DER_TLV(byte_data):
             continue
 
         # Extract the length
-        # Check if the length is multi-byte
         length_byte = byte_data[index]
         index += 1
         
@@ -426,7 +474,10 @@ def parse_DER_TLV(byte_data):
     return parsed_data
 
 def c40_encode(data):
-    # Convert bytes to string if necessary
+    """
+    C40 encoding method, based on the description of the
+    ICAO standardized document 9303 Part 13,  chapter 2.6
+    """
     if isinstance(data, bytes):
         data = data.decode('utf-8')
 
@@ -458,6 +509,12 @@ def c40_encode(data):
     return bytes(encoded_bytes)
 
 def ascii_to_binary(input_data):
+    """
+    Used for the custom Base-32 Encoding function which is obsolete
+    since python already has many supportive libraries.  
+    However i've decided to include this in case it ever changes.
+    """
+
     if isinstance(input_data, str):  # If input is a string
         return ''.join(format(ord(char), '08b') for char in input_data)
     elif isinstance(input_data, bytes):  # If input is bytes
@@ -470,6 +527,11 @@ def zlib_compress(data: bytes) -> bytes:
     return zlib.compress(data)
 
 def custom_base32_encode(text, output_as_bytes=False):
+    """
+    Obsolete since python already have supportive libraries
+    But i've decided to include this function in case it ever changes or is needed.
+    """
+
     # Base-32 symbol chart
     symbols = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
     
@@ -515,11 +577,87 @@ def base32_encode(input_bytes):
     return base64.b32encode(input_bytes)
 
 def remove_base32_padding(encoded_data: bytes) -> bytes:
-    """Remove padding from a Base32 encoded byte sequence."""
+    """
+    Remove padding from a Base32 encoded byte sequence
+    as specified by the IDB standard
+    """
     return encoded_data.rstrip(b'=')
 
-def main_pipeline(input):
+def get_certificate_reference(der_file_path):
+    """
+    Generate the Certificate Reference from a DER encoded certificate file.
 
+    Args:
+    - der_file_path (str): File path to the DER encoded certificate.
+
+    Returns:
+    - str: last 5 bytes of the hash of The Certificate Reference.
+
+    Reads in the .der certificate and computes the last 5 hash of the Certificate Reference
+    as specified by the IDB 3.2.3 Certificate Reference 
+    This field has to be present for signed barcodes.
+
+    """
+    try:
+        # Read the DER encoded certificate file
+        with open(der_file_path, 'rb') as file:
+            der_data = file.read()
+
+        # Compute SHA1 hash of the certificate
+        sha1_hash = hashlib.sha1(der_data).digest()
+
+        # Extract the last 5 bytes of the hash
+        certificate_reference = sha1_hash[-5:]
+
+        return certificate_reference
+
+    except FileNotFoundError:
+        print(f"File not found: {der_file_path}")
+        error_message = "DER certificate reference file not found."
+        logging.error(f"DER certificate reference file not found in {der_file_path}: {e}")
+        write_error_to_file(error_message)
+        return None
+    
+    except Exception as e:
+        print(f"An error occurred: {e}")
+        error_message = "An error unknown error occured while computing the DER certificate reference"
+        logging.error("An error unknown error occured while computing the DER certificate reference")
+        write_error_to_file(error_message)
+        return None
+    
+def LunaSign(data_to_sign):
+    """
+    Args:
+    - Data to be signed
+
+    Returns:
+    - Signed data.
+
+    Signs the barcode through an API.
+    The specific cryptoki.dll API used needs to support the signing mechanism along with the equipment being used.
+
+    Note:  This function needs to be implemented on your end, tailored for your specific needs.
+    Refer to the documentation of API usage on your specific HSM.
+
+    """
+    try:
+        signature_bytes = b'\xf9>N\xca(&\t\xbbO\xe2\xed\xe0F\xacH\xa8S\x03J\xc0\x85\xfcRyZ(ck?~\xf7\xcd\x95\x87$\n\xbe\xe9^\xc3\x9c\xc3\xe5J\x91\x9a\xf2\xbbV\t[\xb9\xca\xc9\xc0\x82`\x96\xde-\xd9JD\x8b' #for testing purposes only 
+        return signature_bytes
+
+    except Exception as e:
+        print(f"Villa í Lunasign falli: {e}")
+        # Optionally, to get the full traceback:
+        import traceback
+        traceback.print_exc()
+        time.sleep(3)
+
+    time.sleep(0.5)
+
+def main_pipeline(input):
+    """ 
+    Function for putting payload through ZLIB and base32.
+    """
+    
     # Step 1: ZLIB Compression
     payload_zlib_compressed = zlib_compress(input)
     #Step 2: Base32 Encoding
@@ -528,13 +666,22 @@ def main_pipeline(input):
     return Base32EncodedPayload
 
 def main():
+    """
+    Main function.  
+    
+    Run as a try exception to gracefully exit if something goes wrong and logging purposes.
+    """
     try:
         logging.info("")
         logging.info("###### Beginning of script instance ######")
         logging.info("")
 
+        CERTIFICATE_REFERENCE = get_certificate_reference(der_file_path)
+        logging.info("Last 5 bytes of SHA1 of certificate reference (hex): %s", CERTIFICATE_REFERENCE.hex())
         SIGNATURE_DATE = datetime.now()
         logging.info("Attempting to read input file: %s", INPUT_DATA_FILE_PATH)
+
+        #Get data from raw txt file.
         try:
             MRZ, CAN, FULL_NAME = parse_text_file(INPUT_DATA_FILE_PATH)
             logging.info("File read successfully. Data extracted: MRZ: %s, CAN: %s, Full Name: %s", 
@@ -544,15 +691,13 @@ def main():
             logging.error("Error while reading or processing the file: %s", e)
             write_error_to_file(error_message)
         
+        # Message Zone data
         MICRO_FACE = read_image_to_bytes(MF_IMAGE_PATH)
-        
-        # Message Zone
         MRZ = MRZ.encode('utf-8') #convert mrz to bytes 
         FULL_NAME = FULL_NAME.encode('utf-8') #Convert full name to bytes
         CAN = CAN.encode('utf-8') #Convert CAN to bytes
 
-        #Apply initial encodements on relevant sections of the barcode...
-        #ENCODE DATE
+        #Get and encode date
         logging.info("Encoding date; %s", SIGNATURE_DATE)
         SIGNATURE_DATE = encode_date(SIGNATURE_DATE)
         logging.info("Encoded date in hex format: %s", SIGNATURE_DATE.hex())
@@ -570,7 +715,7 @@ def main():
         hex_representation_C40_MRZ = ''.join([f'{byte:02x}' for byte in C40_MRZ])
         logging.info("Encoded MRZ: %s", hex_representation_C40_MRZ)
 
-        #CAN
+        #Card Access number
         C40_CAN = c40_encode(CAN)
         logging.info("C40 Encoded CAN: %s", C40_CAN.hex())
 
@@ -578,9 +723,8 @@ def main():
         logging.info("Full Name (hexed): %s", FULL_NAME.hex())
         logging.info("Signature Algorithm to be used: %s", SIGNATURE_ALGORITHM.hex())
 
-        HeaderAndMsg = C40_ISSUING_COUNTRY + SIGNATURE_ALGORITHM + CERTIFICATE_REFERENCE + SIGNATURE_DATE + C40_MRZ + FULL_NAME + MICRO_FACE
-
         #CHECK TO SEE IF ALL PAYLOAD IS IN BYTES
+        HeaderAndMsg = C40_ISSUING_COUNTRY + SIGNATURE_ALGORITHM + CERTIFICATE_REFERENCE + SIGNATURE_DATE + C40_MRZ + FULL_NAME + MICRO_FACE
         if isinstance(HeaderAndMsg, bytes):
             hex_representation = ''.join([f'{byte:02x}' for byte in HeaderAndMsg])
             logging.info("Payload passed Byte check,  Header and Messagezone in Hex, before DER-TLV %s", HeaderAndMsg.hex())
@@ -588,8 +732,8 @@ def main():
             error_message ="Payload data did NOT pass byte check."
             logging.error(" ERROR! Payload data did NOT pass Byte check!")
             write_error_to_file(error_message)
-            
 
+        
         #Apply DER-TLV on relevant data...
         data_items = {
             "MRZ": C40_MRZ,          # Use the encoded MRZ
@@ -607,35 +751,47 @@ def main():
 
         #Apply DER-TLV on content of messagezone
         C40_TLV_MSGZONE = encoded_results["MRZ"] + encoded_results["MICRO_FACE"] + encoded_results["FULL_NAME"]
+        
         logging.info("DER TLV applied to contents of message zone: %s", C40_TLV_MSGZONE.hex())
 
         #Apply DER-TLV on messagezone...
         logging.info("Applying DER_TLV to back barcode message zone itself...")
         DER_TLV_ENCODED_MSGZONE = TLV_encode_data("MSG_ZONE", C40_TLV_MSGZONE)
+        print("DER_TLV_ENCODED_MSGZONE:", DER_TLV_ENCODED_MSGZONE)
         logging.info("DER_TLV_ENCODED_MSGZONE in Hex: %s", DER_TLV_ENCODED_MSGZONE.hex())
 
-        ########################################
-        #Signature should be generated here.
-        # Signature Zone
-        #SIGNATURE = os.urandom(64)  # Random 64 bytes
-        #SIGNATURE = C40_ISSUING_COUNTRY + SIGNATURE_ALGORITHM + CERTIFICATE_REFERENCE + SIGNATURE_DATE + DER_TLV_ENCODED_MSGZONE
-        SIGNATURE = b'\xf9>N\xca(&\t\xbbO\xe2\xed\xe0F\xacH\xa8S\x03J\xc0\x85\xfcRyZ(ck?~\xf7\xcd\x95\x87$\n\xbe\xe9^\xc3\x9c\xc3\xe5J\x91\x9a\xf2\xbbV\t[\xb9\xca\xc9\xc0\x82`\x96\xde-\xd9JD\x8b'
-        ##########################################
-        logging.info("SIGNATURE IN HEX: %s", SIGNATURE.hex())
+        ########################################   Signature Zone   ########################################
+        """
+        As specified by the IDB, 3.5 on Signature Zone
+
+        The input of the signature algorithm MUST be the (hash of the) concatenation of the header and the complete message zone, 
+        ;  in our case the equipment the hashing is part of the signing process so no specific method is needed before passing in the data.
+
+        The concatenated data is  
+        C40_ISSUING_COUNTRY + SIGNATURE_ALGORITHM + CERTIFICATE_REFERENCE + SIGNATURE_DATE +  DER_TLV_ENCODED_MSGZONE(completely processed messagezone)
+        """
+
+        #Byte check before passing the data for signing.
+        ensure_all_bytes(C40_ISSUING_COUNTRY, SIGNATURE_ALGORITHM, CERTIFICATE_REFERENCE, SIGNATURE_DATE, DER_TLV_ENCODED_MSGZONE)
+
+        #data to be signed;  concatenation of the processed header and messagezone
+        SIGNATURE = C40_ISSUING_COUNTRY + SIGNATURE_ALGORITHM + CERTIFICATE_REFERENCE + SIGNATURE_DATE + DER_TLV_ENCODED_MSGZONE
+
+        #Send the data to be signed.
+        logging.info("SIGNATURE before passing it to LunaSign: %s", SIGNATURE)
+        SIGNATURE = LunaSign(SIGNATURE)
+        logging.info("SIGNATURE returned from LunaSign (bytes): %s", SIGNATURE)
+        logging.info("signed SIGNATURE data IN HEX: %s", SIGNATURE.hex())
+
+        #Applying tag value and length denotion using DER-TLV onto the signature
         TLVSIGNATURE = TLV_encode_data("SIGNATURE", SIGNATURE)
-
-        #encoded_signature = TLV_encode_data("SIGNATURE", SIGNATURE)
-        #signature_hex_str = "..."  # Your signature in hex string
-
-        #SIGNATURE = encoded_results["SIGNATURE"]
         logging.info("DER-TLV applied on Signature zone:  %s", TLVSIGNATURE.hex())
 
-        #SIGNATURE = C40_ISSUING_COUNTRY + SIGNATURE_ALGORITHM + CERTIFICATE_REFERENCE + SIGNATURE_DATE + DER_TLV_ENCODED_MSGZONE
         PAYLOAD = C40_ISSUING_COUNTRY + SIGNATURE_ALGORITHM + CERTIFICATE_REFERENCE + SIGNATURE_DATE + DER_TLV_ENCODED_MSGZONE + TLVSIGNATURE
 
         logging.info("Payload before pipeline: %s", PAYLOAD.hex())
 
-        #Main pipeline
+        #Main pipeline ( ZLIB and base32)
         logging.info("putting payload through main pipeline...")
         final_encodement = main_pipeline(PAYLOAD)
         logging.info("Final payload Encodement: %s", final_encodement)
@@ -643,10 +799,10 @@ def main():
         final_encodement_string = final_encodement_nopadding.decode('utf-8')
 
         final_barcode_string = BIG_BARCODE_PREFIX + final_encodement_string
-        logging.info("Generating Big QRCode...")
+        logging.info("Generating Big QRCode from the processed data...")
         try:
             generate_qr_code(final_barcode_string)
-            logging.info("Generated Big Barcode: %s", final_barcode_string)
+            logging.info("Success Generating Big(Back) QRcode: %s", final_barcode_string)
         except ValueError as e:
             logging.error(e)
 
@@ -666,7 +822,7 @@ def main():
         C40_TLV_FRONT_MSGZONE = encoded_results["CAN"]
 
         #DERTLV on the messagezone.
-        DER_TLV_ENCODED_FRONT_MSGZONE = TLV_encode_data("MSG_ZONE", C40_TLV_FRONT_MSGZONE) #????????? er þetta málið
+        DER_TLV_ENCODED_FRONT_MSGZONE = TLV_encode_data("MSG_ZONE", C40_TLV_FRONT_MSGZONE) #??
         logging.info("DER TLV ENCODED Front Messagezone in Hex: %s", DER_TLV_ENCODED_FRONT_MSGZONE.hex())
 
         #print out and define the payload of front barcode.
@@ -677,21 +833,18 @@ def main():
         front_final_encodement = main_pipeline(FRONT_PAYLOAD)
         front_final_encodement_nopadding = remove_base32_padding(front_final_encodement)
         front_final_encodement_string = front_final_encodement_nopadding.decode('utf-8')
-
         front_final_barcode_string = FRONT_BARCODE_PREFIX + front_final_encodement_string
-
         logging.info(front_final_barcode_string)
 
         try:
             generate_front_qr_code(front_final_barcode_string)
-            logging.info("Success generating barcode picture")
+            logging.info("Success generating Front(small) barcode.")
         except ValueError as e:
             print("Error:", e)
             logging.error(e)
 
         logging.info("Generating front small barcode raw txt file...")
         try:
-
             create_front_barcode_raw_file(front_final_barcode_string)
             print("Success generating raw txt file")
             logging.info("raw txt for small front barcode generated")
