@@ -23,9 +23,9 @@ please note that changing some of these will not produce any meaningful effects
 on the methods used on the barcode generation and would need to be further implemented.
 """
 #Paths
-MF_IMAGE_PATH = 'C:\\PY\\BarcodeInput\\MicroFace.jp2'
-INPUT_DATA_FILE_PATH = r'C:\PY\BarcodeInput\barcode_input_data.txt'
-der_file_path = 'C:\PY\Certificates\c=IS_l=Reykjavik_o=ThjodskraIslands_cn=BSTestID_ou=ID.der'
+MF_IMAGE_PATH = 'C:\\PY\\BarcodeInput\\MicroFace.jp2' #MicroFace image.
+INPUT_DATA_FILE_PATH = r'C:\PY\BarcodeInput\barcode_input_data.txt' #Data file for production
+der_file_path = 'Path:\To\Your\derfile.der' #Certificate File
 
 #Constants needed for the barcode data.
 BARCODE_IDENTIFIER = "IDB1"
@@ -37,7 +37,7 @@ BIG_BARCODE_PREFIX = BARCODE_IDENTIFIER + BARCODE_FLAG
 FRONT_BARCODE_PREFIX = BARCODE_IDENTIFIER + FRONT_BARCODE_FLAG
 
 #variable used for signing. specific to environment.
-lpw = os.environ.get("sossy")
+lpw = os.environ.get("YourVariable")
 
 #Values used for testing
 #When certificate file is unreachable in environment;
@@ -47,7 +47,7 @@ lpw = os.environ.get("sossy")
 
 def write_error_to_file(error_message, file_path='err.txt'):
     """
-    #For logging errors.
+    For logging errors.
     Writes the provided error message to the specified file.
     """
     try:
