@@ -596,15 +596,9 @@ def main():
         print("")
         print("OUTPUTS ############:")
         print("")
-        #for message_type, data in extracted_message_data.items():
-            #print(f"{message_type}: {data.hex()}")
 
         # Decode the MessageZone Contents
         decoded_message_data = decode_message_zone_data(extracted_message_data)
-
-        # Print the decoded data
-        #for message_type, data in decoded_message_data.items():
-            #print(f"{message_type}: {data if isinstance(data, str) else data.hex()}")
 
         # Log the types of data found
         for data_type in decoded_message_data.keys():
@@ -624,7 +618,7 @@ def main():
             Full_NAME = decoded_message_data.get("Full Name", "N/A")
             write_to_file(mrz_data=(MRZ1, MRZ2, MRZ3), full_name=Full_NAME, logger=logger)
         
-        #Something wrong with the data
+        #IF Something wrong with the data
         else:
             logger.error("No MRZ or CAN data available.")
 
@@ -642,9 +636,6 @@ def main():
             print("Country identifier:", string_decoded_country_identifier)
             logging.info("Decoded Country Identifier: ", string_decoded_country_identifier)
 
-
-
-            
     except Exception as e:
         error_message = f"An error occurred: {e}\n traceback: {traceback.format_exc()}"
         logger.error(error_message)
