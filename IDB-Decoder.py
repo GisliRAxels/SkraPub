@@ -5,6 +5,10 @@ from logging.handlers import RotatingFileHandler
 import os
 import traceback
 
+#Path
+INPUT_DATA_FILE_PATH = r'C:\PY\BarcodeDecodeInput\BarcodeDecodeRawInput.txt'
+
+
 C40_CHART = {
     "Shift 1": 0,
     "Shift 2": 1,
@@ -78,16 +82,32 @@ def setup_logging():
     return logger
 
 def determine_signature_status(flag):
-    if flag in ['A', 'C']:
+    '''
+    Determine Flow by Flag
+    A = Not signed, Not compressed
+    B = Signed, Not compressed
+    C = Not signed, Compressed
+    D = Signed, Compressed
+    
+    '''
+    if flag in ['A']:
         IsSigned = False
-    elif flag in ['B', 'D']:
+        IsZipped = False
+    elif flag in ['B']:
         IsSigned = True
+        IsZipped = False
+    elif flag in ['C']:
+        IsSigned = False
+        IsZipped = True
+    elif flag in ['D']:
+        IsSigned = True
+        IsZipped = True
     else:
         error_message ="Invalid flag. Flag must be 'A', 'B', 'C', or 'D"
         write_error_to_file(error_message)
         raise ValueError("Invalid flag. Flag must be 'A', 'B', 'C', or 'D'.")
     
-    return IsSigned
+    return IsSigned, IsZipped
 
 def parse_barcode_input(file_path):
     """
@@ -319,6 +339,7 @@ def decode_message_zone_data(extracted_message_data):
             # Save as jp2 image and keep raw value
             save_image_as_jp2(value, 'MicroFace.jp2')
             decoded_value = value
+
         else:
             # Undefined decoding, keep as is
             decoded_value = value
@@ -336,6 +357,8 @@ def save_image_as_jp2(image_data, filename):
     file_path = os.path.join(directory_path, filename)
     with open(file_path, 'wb') as file:
         file.write(image_data)
+        print("Image Data", image_data)
+        print("Image Data", image_data.hex())
     print(f"Saved {file_path}")
 
 def SignatureZoneCheck(data, IsSigned, logger):
@@ -345,6 +368,8 @@ def SignatureZoneCheck(data, IsSigned, logger):
             error_message ="no data in signature zone found but issigned is true"
             write_error_to_file(error_message)
             raise ValueError("No data in signature zone despite IsSigned being True.")
+        if data:
+            logger.info("SignatureZoneCheck: IsSigned is true and Signature data is present.")
     else:
         if data:
             logger.warning("Data after Messagezone found, but IsSigned is False.")
@@ -513,16 +538,15 @@ def decode_hex_to_string(hex_string):
         print(f"Error during decoding: {e}")
         return None
 
-INPUT_DATA_FILE_PATH = r'C:\PY\BarcodeDecodeInput\BarcodeDecodeRawInput.txt'
-
 def main():
     try:
         logger = setup_logging()  # Initialize logging
-
+        logger.info("")
+        logger.info("###  Beginning of script instance  ###")
         logger.info("Attempting to read input file: %s", INPUT_DATA_FILE_PATH)
         try:
             BarcodeInput = parse_barcode_input(INPUT_DATA_FILE_PATH)
-            logger.info("File read successfully: %s", BarcodeInput)
+            logger.info("File read successfully:")
         except Exception as e:
             error_message ="Error while reading or processing input file"
             write_error_to_file(error_message)
@@ -530,22 +554,29 @@ def main():
             raise  # Re-raise the exception to exit from main
 
         identifier, flag, data = remove_prefix(BarcodeInput)
-        
+
+
+        logger.info("Barcode Input:%s", BarcodeInput)
         print("Barcode Identifier:", identifier)
         print("Barcode Flag:", flag)
         print("Identifier and flag removed", data)
 
-        IsSigned = determine_signature_status(flag)
-        print("Issigned", IsSigned)
+        IsSigned, IsZipped = determine_signature_status(flag)
+        print("Issigned:", IsSigned)
+        print("IsZipped:", IsZipped)
 
         data = add_base32_padding(data)
         print("Base 32 padding added:", data)
 
         data = base32_decode(data)
         print("Base 32 decoded", data.hex())
+        logger.info("Data 32-debased:  %s", data.hex())
 
-        data = decompress_data(data)
-        print("Decompressed:", data.hex())
+        if IsZipped:
+            logger.info("IsZipped value true, Decompressing...")
+            data = decompress_data(data)
+            print("Decompressed:", data.hex())
+            logger.info("Decompressed:  %s", data.hex())
 
         # Header
         Head_data = HeadReader(data, IsSigned)
@@ -563,6 +594,8 @@ def main():
             print("Signature Creation Date:", signature_creation_date.hex())
         if certificate_reference:
             print("Certificate Reference:", certificate_reference.hex())
+            #logger.info(f"Certificate Reference:", certificate_reference.hex())
+            
         if data:
             print("Remaining Data:", data.hex())
 
@@ -578,6 +611,7 @@ def main():
         signer_certificate_data, data = ExtractSignerCertificateZone(data, IsSigned, logger)
         if signer_certificate_data:
             print("Signer Certificate Data:", signer_certificate_data.hex())
+            logger.info(f"Signer Certificate Data:", signer_certificate_data.hex())
 
         # SignatureZone
         signature_zone = SignatureReader(data, IsSigned)
@@ -586,49 +620,49 @@ def main():
 
         # Deep MessageZone
         extracted_message_data = MessageZoneReader(message_zone)
+
         print("")
         print("OUTPUTS ############:")
         print("")
 
         # Decode the MessageZone Contents
+        logger.info("Scanning messagezone...")
         decoded_message_data = decode_message_zone_data(extracted_message_data)
 
-        # Log the types of data found
+        # Log the types of data found in messagezone
         for data_type in decoded_message_data.keys():
             logger.info(f"Data type found: {data_type}")
 
         extracted_message_data = MessageZoneReader(message_zone)
         decoded_message_data = decode_message_zone_data(extracted_message_data)
 
-        # If we are decoding small barcode
-        if "Card Access Number" in decoded_message_data:
-            CAN = decoded_message_data["Card Access Number"]
-            write_to_file(can=CAN, logger=logger)
-
-        #If we are decoding big barcode
-        elif "Machine Readable Zone (TD1)" in decoded_message_data:
-            MRZ1, MRZ2, MRZ3 = MRZSplitter(decoded_message_data["Machine Readable Zone (TD1)"])
-            Full_NAME = decoded_message_data.get("Full Name", "N/A")
-            write_to_file(mrz_data=(MRZ1, MRZ2, MRZ3), full_name=Full_NAME, logger=logger)
-        
-        #IF Something wrong with the data
-        else:
-            logger.error("No MRZ or CAN data available.")
-
-        # Add condition to print specific data
-        print(f"Machine Readable Zone (TD1): {MRZ1} {MRZ2} {MRZ3}")
-        print(f"MicroFace: {decoded_message_data.get('MicroFace')}")
-        print(f"Full Name: {Full_NAME}")
-
-        if signature_creation_date:
-            string_decoded_date = decode_date(signature_creation_date)
-            logger.info(f"string_decoded_date MMDDYYYY: {string_decoded_date}")
-
         if country_identifier:
             string_decoded_country_identifier = c40_decode(country_identifier)
             print("Country identifier:", string_decoded_country_identifier)
-            logging.info("Decoded Country Identifier: ", string_decoded_country_identifier)
+            logger.info(f"Decoded Country Identifier: {string_decoded_country_identifier}")
+        if signature_creation_date:
+            string_decoded_date = decode_date(signature_creation_date)
+            print("Signature Date:", string_decoded_date)
+            logger.info(f"Signed on: {string_decoded_date}")
 
+        # Determine what to write onto output file by examining the data.
+        if "Card Access Number" in decoded_message_data:
+            CAN = decoded_message_data["Card Access Number"]
+            write_to_file(can=CAN, logger=logger)
+            print("CAN: ", CAN)
+            logging.info("Card access number written to output file.")
+        elif "Machine Readable Zone (TD1)" in decoded_message_data:
+            MRZ1, MRZ2, MRZ3 = MRZSplitter(decoded_message_data["Machine Readable Zone (TD1)"])
+            Full_NAME = decoded_message_data.get("Full Name", "N/A")
+            print("FULL NAME:", Full_NAME)
+            write_to_file(mrz_data=(MRZ1, MRZ2, MRZ3), full_name=Full_NAME, logger=logger)
+            print("MRZ: ", MRZ1, MRZ2, MRZ3)
+            logging.info("MRZ and FN written to output file.")
+        else:
+            logger.error("No MRZ or CAN data extracted from the messagezone,  nothing written to output file.")
+
+        print("Script end reached succesfully.")
+        logging.info("Script end reached succesfully.")
     except Exception as e:
         error_message = f"An error occurred: {e}\n traceback: {traceback.format_exc()}"
         logger.error(error_message)
