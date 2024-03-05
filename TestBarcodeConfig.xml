@@ -1,0 +1,5 @@
+<settings>
+    <cert_file_path>C:\Path\To\Certificate.der</cert_file_path>
+    <slot_number>0</slot_number>
+    <key_label>Insert KeyLabel here</key_label>
+</settings>
